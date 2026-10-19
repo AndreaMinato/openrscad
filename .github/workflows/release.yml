@@ -20,9 +20,11 @@ name: Release desktop app
 #
 # The in-app updater reads
 #   https://github.com/matthova/openrscad/releases/latest/download/latest.json
-# which resolves to the latest published, non-prerelease release. Because assets
-# attach AFTER the Release exists, installers appear a few minutes later once
-# the matrix finishes.
+# and every download link (README, landing page, in-app callout) reads
+# releases/latest/download/<stable-name>; both resolve to the release marked
+# "Latest". Assets attach AFTER the Release exists, so changesets.yml creates it
+# NOT-latest and the `promote` job below marks it Latest only once every leg has
+# uploaded. Until then the links keep serving the previous release.
 #
 # Required repository secrets (see docs/RELEASING.md):
 #   TAURI_SIGNING_PRIVATE_KEY           — minisign private key (updater signing)
@@ -312,3 +314,46 @@ jobs:
           fi
           cp "$src" "${{ matrix.stable-name }}"
           gh release upload "$TAG" "${{ matrix.stable-name }}" --clobber --repo "$GITHUB_REPOSITORY"
+
+  # Mark the Release "Latest" once every installer is attached. changesets.yml
+  # creates it with --latest=false, so until this runs, releases/latest keeps
+  # serving the previous complete release. A Release marked Latest before its
+  # assets exist 404s every download link and the updater's latest.json.
+  # `needs` waits for the whole matrix, so one failed leg leaves the previous
+  # release as Latest. Re-running the failed jobs also re-runs this one.
+  promote:
+    needs: release
+    runs-on: ubuntu-latest
+    # Two releases cut close together each promote. Serialize them so the
+    # version check below and the edit can't interleave and leave the OLDER one
+    # as Latest.
+    concurrency:
+      group: release-promote
+      cancel-in-progress: false
+    steps:
+      - name: Mark the release Latest
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          PRE=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isPrerelease --jq .isPrerelease)
+          if [ "$PRE" = "true" ]; then
+            echo "$TAG is a prerelease; GitHub never marks those Latest."
+            exit 0
+          fi
+          # A hand-dispatched rebuild of an older tag must not take Latest away
+          # from a newer release. (gh api prints the error body on a 404, e.g.
+          # no Latest release at all, so discard its output on failure.)
+          CURRENT=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name 2>/dev/null) || CURRENT=""
+          if [ "$CURRENT" = "$TAG" ]; then
+            echo "$TAG is already Latest."
+            exit 0
+          fi
+          NEWEST=$(printf '%s\n%s\n' "${CURRENT#v}" "${TAG#v}" | sort -V | tail -n1)
+          if [ -n "$CURRENT" ] && [ "$NEWEST" != "${TAG#v}" ]; then
+            echo "Latest is $CURRENT, which is newer than $TAG; leaving it."
+            exit 0
+          fi
+          gh release edit "$TAG" --latest --repo "$GITHUB_REPOSITORY"
+          echo "Marked $TAG Latest (was ${CURRENT:-none})."

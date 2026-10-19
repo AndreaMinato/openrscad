@@ -15,8 +15,10 @@ not by tagging by hand.
 2. If the manifest version is newer than the running app, it downloads that
    platform's update artifact, verifies its **minisign signature** against the
    public key baked into `tauri.conf.json`, installs it, and relaunches.
-3. `releases/latest` resolves only to a **published, non-prerelease** GitHub
-   Release — so a draft or prerelease is invisible to the updater.
+3. `releases/latest` resolves only to the GitHub Release marked **Latest**,
+   which is never a draft or prerelease, so neither is visible to the
+   updater. A new release isn't marked Latest until all of its installers have
+   uploaded (see below).
 
 Update artifacts per platform:
 
@@ -52,8 +54,13 @@ Update artifacts per platform:
      that Release.
    - **Publish engine to npm** — `openrscad-engine`, via OIDC with provenance.
 
-   Assets appear a few minutes later. Existing desktop users are offered the
-   update as soon as `latest.json` uploads.
+   The Release is created **not** marked Latest. Once every platform's
+   installers are attached (about 20 minutes), the desktop workflow's `promote`
+   job marks it Latest. Only then do the download links
+   (`releases/latest/download/<name>`) and the updater's `latest.json` switch to
+   it. Until then they keep serving the previous release, so they never 404. If
+   any platform leg fails, the previous release stays Latest. Fix the problem
+   and re-run the failed jobs, which re-runs `promote` too.
 
 ### Versions are owned by changesets
 
@@ -94,7 +101,9 @@ add (or edit) a changeset with that level; the highest pending bump wins.
   (same for `publish-npm.yml`).
 - Publishing a Release **by hand** still fires both workflows via
   `release: published`. Bot-authored releases are ignored on that trigger so the
-  dispatch path can't double-fire.
+  dispatch path can't double-fire. Untick **Set as the latest release** when
+  you publish. `promote` marks it Latest after the build, and leaving the box
+  ticked 404s every download link until then.
 
 ---
 
@@ -135,7 +144,8 @@ These require secrets, paid accounts, or GitHub UI actions an agent can't do.
 
 - [ ] **Merge the "Version Packages" PR** (any merge style). Everything
       downstream is automatic. Merge only when ready to ship: existing desktop
-      users are offered the update as soon as the assets upload.
+      users are offered the update once every installer has uploaded and the
+      release is marked Latest.
 
 ### OS code-signing
 
