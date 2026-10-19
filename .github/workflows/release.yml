@@ -261,8 +261,9 @@ jobs:
       # Each release .app must be (1) validly signed, (2) signed with the
       # Developer ID rather than the ad-hoc fallback, and (3) notarized with
       # the ticket stapled. These are three separate failure modes:
-      #   1. No bundle signature at all (what v0.14.0 shipped): macOS calls the
-      #      download "damaged and can't be opened", with no way past it.
+      #   1. No bundle signature at all (what v0.14.1 and earlier shipped):
+      #      macOS calls the download "damaged and can't be opened", with no
+      #      way past it.
       #   2. Ad-hoc only (APPLE_SIGNING_IDENTITY missing): "Apple could not
       #      verify…", and users have to click Open Anyway in System Settings.
       #   3. Signed but not notarized (APPLE_ID/PASSWORD/TEAM_ID missing): the

@@ -24,7 +24,7 @@ geometry behavior checked against stock OpenSCAD.
 Desktop links always fetch the latest release, and the app auto-updates in place.
 Need `.deb` / `.rpm` / `.msi` or an older version? <a href="https://github.com/matthova/openrscad/releases/latest" target="_blank" rel="noopener noreferrer">Browse all downloads</a>.
 
-> **macOS: "OpenRSCAD is damaged and can't be opened"?** You have v0.14.0 or
+> **macOS: "OpenRSCAD is damaged and can't be opened"?** You have v0.14.1 or
 > earlier, which shipped before the Mac app was signed and
 > <a href="https://support.apple.com/guide/security/gatekeeper-and-runtime-protection-sec5599b66df/web" target="_blank" rel="noopener noreferrer">notarized</a>. Download the
 > latest release instead, or clear the quarantine flag on the copy you have:
