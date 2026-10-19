@@ -137,17 +137,41 @@ These require secrets, paid accounts, or GitHub UI actions an agent can't do.
       downstream is automatic. Merge only when ready to ship: existing desktop
       users are offered the update as soon as the assets upload.
 
-### Recommended before a public launch — OS code-signing
+### OS code-signing
 
-Without these, users get "unidentified developer" / SmartScreen warnings on
-first install (auto-update still works). Signing must be enabled in the release
-workflow (`.github/workflows/release.yml` has the macOS env block commented in).
+What ships: the macOS `.app` is signed with the project's **Developer ID** and
+**notarized** by Apple in CI, with the ticket stapled, so a downloaded copy
+opens with no Gatekeeper warning. The release workflow fails a macOS leg whose
+`.app` isn't Developer ID signed or has no stapled ticket. (The bundler only
+*warns* when notarization credentials are missing, so that check is the only
+thing that catches it.) Local builds fall back to the ad-hoc identity `"-"`
+(`bundle.macOS.signingIdentity` in `desktop/src-tauri/tauri.conf.json`); CI's
+`APPLE_SIGNING_IDENTITY` overrides it. Windows still shows a SmartScreen warning
+on first install. Auto-update works either way.
 
-- [ ] **macOS**: enroll in the Apple Developer Program ($99/yr); create a
-      "Developer ID Application" certificate; add secrets `APPLE_CERTIFICATE`,
-      `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`,
-      `APPLE_PASSWORD` (app-specific password), `APPLE_TEAM_ID`; uncomment the
-      Apple env block in the workflow. This also enables **notarization**.
+- [x] **macOS**: Apple Developer Program membership; a "Developer ID
+      Application" certificate (created by the Account Holder in Xcode →
+      Settings → Accounts → Manage Certificates, exported from Keychain Access as
+      a `.p12`); repository secrets:
+  - `APPLE_CERTIFICATE`: `base64 -i cert.p12`
+  - `APPLE_CERTIFICATE_PASSWORD`: the `.p12` export password
+  - `APPLE_SIGNING_IDENTITY`: `Developer ID Application: <Name> (<TEAMID>)`,
+    as printed by `security find-identity -v -p codesigning` (no quotes)
+  - `APPLE_ID`: the Apple ID email used for notarization
+  - `APPLE_PASSWORD`: an **app-specific password** for that Apple ID
+    (account.apple.com → Sign-In and Security → App-Specific Passwords)
+  - `APPLE_TEAM_ID`: the 10-character team ID
+
+  Keep these working:
+  - Changing or resetting that Apple ID's password **revokes every
+    app-specific password**. Generate a new one and update `APPLE_PASSWORD`, or
+    the next release's macOS legs fail at the notarization check.
+  - The certificate expires. Apple shows the date under Certificates, IDs &
+    Profiles. Before then, create a new one and replace `APPLE_CERTIFICATE`,
+    `APPLE_CERTIFICATE_PASSWORD`, and `APPLE_SIGNING_IDENTITY`. Builds
+    already shipped stay valid.
+  - Back up the `.p12` and its password somewhere safe. Apple can't
+    re-download the private key.
 - [ ] **Windows**: obtain a code-signing certificate (Azure Trusted Signing is
       the cheapest modern option; an OV/EV cert also works) and wire it into the
       Windows bundle config / workflow.

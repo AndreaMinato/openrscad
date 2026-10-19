@@ -521,9 +521,9 @@ impl Mesh {
             };
             for t in split_elements(scope, "triangle") {
                 if let (Some(a), Some(b), Some(c)) = (
-                    xml_child_f64(t, "v1").and_then(&resolve),
-                    xml_child_f64(t, "v2").and_then(&resolve),
-                    xml_child_f64(t, "v3").and_then(&resolve),
+                    xml_child_f64(t, "v1").and_then(resolve),
+                    xml_child_f64(t, "v2").and_then(resolve),
+                    xml_child_f64(t, "v3").and_then(resolve),
                 ) {
                     tris.push([a, b, c]);
                 }

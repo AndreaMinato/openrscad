@@ -27,7 +27,9 @@ name: Release desktop app
 # Required repository secrets (see docs/RELEASING.md):
 #   TAURI_SIGNING_PRIVATE_KEY           — minisign private key (updater signing)
 #   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  — its password
-# Optional (OS code-signing / notarization) are documented in docs/RELEASING.md.
+#   APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY,
+#   APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID
+#                                       — macOS Developer ID signing + notarization
 
 on:
   release:
@@ -72,11 +74,15 @@ jobs:
             # the README can link releases/latest/download/<name> permanently.
             bundle-glob: "desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg"
             stable-name: "OpenRSCAD-macos-aarch64.dmg"
+            # The .app the .dmg and updater .app.tar.gz are built from; its code
+            # signature is verified after the build (see the macOS step below).
+            app-glob: "desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.app"
           - platform: macos-15-intel
             args: "--target x86_64-apple-darwin"
             rust-targets: "x86_64-apple-darwin"
             bundle-glob: "desktop/src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg"
             stable-name: "OpenRSCAD-macos-x64.dmg"
+            app-glob: "desktop/src-tauri/target/x86_64-apple-darwin/release/bundle/macos/*.app"
           - platform: ubuntu-22.04
             args: ""
             rust-targets: ""
@@ -217,13 +223,24 @@ jobs:
           # unsigned and the app refuses them.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # ---- Optional macOS code-signing + notarization (see RELEASING.md) ----
-          # APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          # APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          # APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          # APPLE_ID: ${{ secrets.APPLE_ID }}
-          # APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # ---- macOS code-signing + notarization (see RELEASING.md) ----
+          # The bundler imports the Developer ID certificate into a temporary
+          # keychain, signs the .app with the hardened runtime, submits it to
+          # Apple's notary service, waits, and staples the ticket to the .app
+          # before building the .dmg and the updater .app.tar.gz from it. A
+          # notarized download opens with no Gatekeeper warning.
+          # APPLE_SIGNING_IDENTITY overrides the ad-hoc identity "-" in
+          # tauri.conf.json (bundle.macOS.signingIdentity), which is only the
+          # fallback for local builds. The bundler does NOT fail when the
+          # notarization credentials are missing — it warns and ships a signed but
+          # un-notarized app — so the verify step below checks for the ticket.
+          # Ignored on the Windows and Linux legs.
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           # desktop/ holds package.json; tauri finds src-tauri/tauri.conf.json.
           projectPath: desktop
@@ -240,6 +257,42 @@ jobs:
           # Emits latest.json (the updater manifest) alongside the installers.
           includeUpdaterJson: true
           args: ${{ matrix.args }}
+
+      # Each release .app must be (1) validly signed, (2) signed with the
+      # Developer ID rather than the ad-hoc fallback, and (3) notarized with
+      # the ticket stapled. These are three separate failure modes:
+      #   1. No bundle signature at all (what v0.14.1 and earlier shipped):
+      #      macOS calls the download "damaged and can't be opened", with no
+      #      way past it.
+      #   2. Ad-hoc only (APPLE_SIGNING_IDENTITY missing): "Apple could not
+      #      verify…", and users have to click Open Anyway in System Settings.
+      #   3. Signed but not notarized (APPLE_ID/PASSWORD/TEAM_ID missing): the
+      #      same dialog, and the bundler only warns, so nothing else catches it.
+      # Fail the leg on any of them. (Runs after the upload because tauri-action
+      # builds and uploads in one step; a red job is the signal.)
+      - name: Verify macOS signature and notarization
+        if: startsWith(matrix.platform, 'macos')
+        shell: bash
+        run: |
+          app=$(ls -d ${{ matrix.app-glob }} 2>/dev/null | head -n1)
+          if [ -z "$app" ]; then
+            echo "::error::No .app matched ${{ matrix.app-glob }}"; exit 1
+          fi
+          info=$(codesign -dv --verbose=2 "$app" 2>&1 || true)
+          echo "$info" | grep -E '^(Format|CodeDirectory|Signature|Authority|TeamIdentifier|Sealed Resources|Runtime Version)' || true
+          if ! codesign --verify --deep --strict --verbose=2 "$app"; then
+            echo "::error::$app has no valid code signature — macOS would report the download as damaged."
+            exit 1
+          fi
+          if [[ "$info" != *"Authority=Developer ID Application:"* ]]; then
+            echo "::error::$app is not signed with a Developer ID (ad-hoc fallback?). Check the APPLE_CERTIFICATE / APPLE_CERTIFICATE_PASSWORD / APPLE_SIGNING_IDENTITY secrets."
+            exit 1
+          fi
+          if ! xcrun stapler validate "$app"; then
+            echo "::error::$app has no stapled notarization ticket. Check the APPLE_ID / APPLE_PASSWORD / APPLE_TEAM_ID secrets and the notarization output of the build step."
+            exit 1
+          fi
+          echo "$app: Developer ID signed and notarized."
 
       # tauri-action names installers with the version embedded
       # (OpenRSCAD_0.0.4_aarch64.dmg), so there's no stable URL to link from a static

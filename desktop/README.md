@@ -47,6 +47,8 @@ cd desktop && npm run build                    # bundle installers
 `npm run dev`/`build` build the `web/` frontend first (see `beforeBuildCommand`
 in `src-tauri/tauri.conf.json`). On macOS, `npm run build` produces
 `src-tauri/target/release/bundle/macos/OpenRSCAD.app` and a
-`…/dmg/OpenRSCAD_<ver>_aarch64.dmg` installer (ad-hoc signed — for distribution
-you'd add an Apple Developer signing identity + notarization). Windows/Linux
-bundles come from running the same command on those platforms.
+`…/dmg/OpenRSCAD_<ver>_aarch64.dmg` installer. Locally the `.app` is ad-hoc
+signed (`bundle.macOS.signingIdentity: "-"` in `tauri.conf.json`). Release builds
+in CI are signed with the project's Developer ID and notarized instead, via the
+`APPLE_*` secrets. See [docs/RELEASING.md](../docs/RELEASING.md).
+Windows/Linux bundles come from running the same command on those platforms.
