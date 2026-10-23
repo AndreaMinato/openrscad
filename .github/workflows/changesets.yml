@@ -135,12 +135,19 @@ jobs:
           PRERELEASE=""
           case "$VERSION" in *-*) PRERELEASE="--prerelease" ;; esac
 
+          # --latest=false: the Release has no installers yet, and every
+          # download link resolves through releases/latest/download/<name>.
+          # Marking it Latest now would 404 those links until the desktop build
+          # finishes (or forever, if a leg fails). release.yml's `promote` job
+          # marks it Latest once every installer is attached.
+          #
           # `gh release create` also creates the git tag at --target.
           gh release create "$TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "$TAG" \
             --notes "$NOTES" \
+            --latest=false \
             $PRERELEASE
           echo "Created release $TAG."
           echo "created=true" >> "$GITHUB_OUTPUT"

@@ -11,7 +11,7 @@ test("about page renders hero, features, and per-OS downloads", async ({
   await page.goto("/");
 
   await expect(
-    page.getByRole("heading", { level: 1, name: /rendered in milliseconds/i }),
+    page.getByRole("heading", { level: 1, name: /reimagined for speed/i }),
   ).toBeVisible();
 
   // All four stable per-OS download aliases are present and point at the
